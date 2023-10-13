@@ -1,0 +1,11 @@
+version: '3'
+services:
+  client-app:
+    extends:
+      file: client/docker-compose.yml
+      service: client-app
+
+  server-app:
+    extends:
+      file: server/docker-compose.yml
+      service: server-app

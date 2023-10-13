@@ -1,0 +1,6 @@
+version: '3'
+services:
+  client-app:
+    build: .
+    ports:
+      - "8082:8082"

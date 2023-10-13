@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Video Call Server</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/css/bootstrap.min.css">
+    <style>
+        .video-container {
+            border: 2px dashed #aaa;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .video-placeholder {
+            width: 100%;
+            height: 300px;
+            background-color: #eee; 
+        }
+    </style>
+</head>
+<body>
+    <input type="hidden" name="allow-camera" value="true">
+    <div class="container text-center mt-5">
+        <h1>WebRTC Video Call Server</h1>
+        <p class="lead">Press F12 to debug!!!</p>
+
+    </div>
+    <script type="module" src="script-server.js"></script>
+</body>
+</html>
+

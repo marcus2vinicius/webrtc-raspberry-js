@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Video Call</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css">
+    <style>
+        .video-container {
+            border: 2px dashed #aaa;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .video-placeholder {
+            min-width: 640px;
+            min-height: 640px;
+            background-color: #eee; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container text-center mt-5">
+        <h1>WebRTC Video Call</h1>
+        <p class="lead">Call your embedded device easily!!!</p>
+
+        <div class="row mt-3 justify-content-center">
+            <div class="col-md-6">                
+                <button disabled id="startCallButton" class="btn btn-primary btn-lg">
+                    <i class="bi bi-telephone-fill"></i> Start
+                </button>
+                <button disabled id="stopCallButton" class="btn btn-danger btn-lg" style="display: inline;">
+                    <i class="bi bi-telephone-x-fill"></i> Stop
+                </button>
+            </div>
+        </div>
+
+        <div class="row mt-5 justify-content-center">
+            <div class="col-md-12">
+                <div class="video-container">
+                    <div class="video-placeholder">
+                        <video id="localVideo" autoplay muted class="w-100 h-100" style="display: none;"></video>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.min.js"></script>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
+``
