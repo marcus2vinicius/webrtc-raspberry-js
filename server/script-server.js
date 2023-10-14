@@ -23,7 +23,7 @@ function createPeer (offerSDP) {
         ]
     };
     
-    peer = new RTCPeerConnection(config);
+    peer = new RTCPeerConnection();
     
     captureCamera(offerSDP);
 }
@@ -70,7 +70,7 @@ async function createAnswer (sdp) {
     await peer.setRemoteDescription(offer)
     let answer = await peer.createAnswer()
     
-    answer.sdp = forceKbps(answer.sdp, 50)
+    //answer.sdp = forceKbps(answer.sdp, 50)
 
     await peer.setLocalDescription(answer)
 

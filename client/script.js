@@ -29,7 +29,7 @@ function createPeer () {
         ]
     };
       
-    peer = new RTCPeerConnection(config);  
+    peer = new RTCPeerConnection();  
 
     peer.addEventListener('track', function (evt) {
         if (evt.track.kind == 'video') {
@@ -55,7 +55,7 @@ async function negociate () {
 
     let offer = await peer.createOffer();
 
-    offer.sdp = forceKbps(offer.sdp, 50)
+    //offer.sdp = forceKbps(offer.sdp, 50)
 
     await peer.setLocalDescription(offer);
 
