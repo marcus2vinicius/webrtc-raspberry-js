@@ -7,12 +7,18 @@ var peer = null;
 socket.on("connect", () => {
     console.log("Connected websocket");
     socket.emit("subscribe", 'webrtc-offer');
+    socket.emit("subscribe", 'candidate');
 
     socket.on('webrtc-offer', (message) => {
         console.log('receive msg from websocket')
         socket.emit('broadcast', {channel: 'log', message: {msg: 'receive msg from websocket' } })
         showDevices();
         createPeer(message.sdp)
+    })
+
+    socket.on('candidate', (message) => {
+        if(peer)
+            peer.addIceCandidate(new RTCIceCandidate(message.candidate)).catch((e) => console.error(e));
     })
 });
 //endregion websocket
@@ -56,9 +62,9 @@ async function iceGatheringStateChangeHandler() {
     }catch (e){
         socket.emit('broadcast', {channel: 'log', message: e })
     }
-  }
+}
 
-  async function handleICEConnectionStateChange(event) {
+async function handleICEConnectionStateChange(event) {
     try{
         let message = "iceConnectionState: "+ peer.iceConnectionState;
         console.log(message);
@@ -74,7 +80,13 @@ async function iceGatheringStateChangeHandler() {
     }catch (e){
         socket.emit('broadcast', {channel: 'log', message: e })
     }    
-  }
+}
+
+async function onicecandidateHandler(event) {
+    if (event.candidate) {
+        socket.emit('broadcast', {channel: 'candidate', message: {candidate: event.candidate} })      
+    }
+}
 
 
 
@@ -91,12 +103,12 @@ function captureCamera (sdpOffer) {
         /**
          * case multple cameras you can get device id(`showDevices();`) and set here
          */
-        /*
+        
         video: {            
             deviceId: { exact: 'cba2853b37d8b806508a3ed345a4f2fee38e655bd97ebd8b56b17e739ce60f4d' }
         }                
-        */
-       video: true
+        
+       //video: true
     }; 
 
     navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
@@ -134,8 +146,9 @@ async function createAnswer (sdp) {
 
     peer.addEventListener("icegatheringstatechange", iceGatheringStateChangeHandler);
     peer.oniceconnectionstatechange = handleICEConnectionStateChange;
+    peer.onicecandidate = onicecandidateHandler;
 
-    sendAnswerToBrowser(peer.localDescription.sdp)
+    sendAnswerToBrowser(peer.localDescription.sdp);
 }
 
 function applyContraints (videoTrack) {

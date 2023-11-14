@@ -12,6 +12,7 @@ socket.on("connect", () => {
     console.log("Connected websocket");
     socket.emit("subscribe", 'webrtc-answer');
     socket.emit("subscribe", 'log');
+    socket.emit("subscribe", 'candidate');
 
     socket.on('webrtc-answer', (message) => {
         setAnswer(message.sdp)
@@ -20,6 +21,12 @@ socket.on("connect", () => {
     socket.on('log', (message) => {
         console.log('Log from Server: ', message)
     })
+
+    socket.on('candidate', (message) => {
+        if(peer)
+            peer.addIceCandidate(new RTCIceCandidate(message.candidate)).catch((e) => console.error(e));
+    })
+
     btnStart.disabled = false;
 });
 //endregion websocket
@@ -33,7 +40,7 @@ function createPeer () {
         }]
     }
       
-    peer = new RTCPeerConnection(config);  
+    peer = new RTCPeerConnection(config);
 
     peer.addEventListener('track', function (evt) {
         if (evt.track.kind == 'video') {
@@ -63,27 +70,37 @@ async function negociate () {
 
     await peer.setLocalDescription(offer);
 
-    await verifyStateComplete();
+    peer.addEventListener("icegatheringstatechange", iceGatheringStateChangeHandler);
+    peer.onicecandidate = onicecandidateHandler;
 
     sendOfferToServer(peer.localDescription.sdp);
 }
 
-async function verifyStateComplete () {
-    console.log("verifyStateComplete")
+async function onicecandidateHandler(event) {
+    if (event.candidate) {
+        socket.emit('broadcast', {channel: 'candidate', message: {candidate: event.candidate} })      
+    }
+}
 
-    return new Promise(function (resolve) {
-        if (peer.iceGatheringState === 'complete') {
-            resolve();
-        } else {
-            function checkState() {
-                if (peer.iceGatheringState === 'complete') {
-                    peer.removeEventListener('icegatheringstatechange', checkState);
-                    resolve();
-                }
-            }
-            peer.addEventListener('icegatheringstatechange', checkState);
+async function iceGatheringStateChangeHandler() {
+    try{
+        let message = `iceGatheringState": ${peer.iceGatheringState}`;
+        console.log(message);
+        socket.emit('broadcast', {channel: 'log', message: message });
+        switch (peer.iceGatheringState) {
+        case "new":
+            break;
+        case "gathering":        
+            break;
+        case "complete":
+            break;
+        default:
+            console.log("State not found");
+            break;
         }
-    });
+    }catch (e){
+        socket.emit('broadcast', {channel: 'log', message: e })
+    }
 }
 
 function applyContraints (videoTrack) {
