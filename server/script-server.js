@@ -10,35 +10,90 @@ socket.on("connect", () => {
 
     socket.on('webrtc-offer', (message) => {
         console.log('receive msg from websocket')
+        socket.emit('broadcast', {channel: 'log', message: {msg: 'receive msg from websocket' } })
+        showDevices();
         createPeer(message.sdp)
     })
 });
 //endregion websocket
 
 function createPeer (offerSDP) {
+    socket.emit('broadcast', {channel: 'log', message: {msg: 'createPeer()'} })
+
     let config = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-        ]
-    };
+        iceServers: [{
+            urls: ['stun:stun.l.google.com:19302'],
+        }]
+    }
     
-    peer = new RTCPeerConnection();
-    
-    captureCamera(offerSDP);
+    peer = new RTCPeerConnection(config);
+
+    try{
+        captureCamera(offerSDP);
+
+    }catch (e){
+        socket.emit('broadcast', {channel: 'log', message: e })
+    }
+
 }
+
+async function iceGatheringStateChangeHandler() {
+    try{
+        let message = `iceGatheringState": ${peer.iceGatheringState}`;
+        console.log(message);
+        socket.emit('broadcast', {channel: 'log', message: message });
+        switch (peer.iceGatheringState) {
+        case "new":
+            break;
+        case "gathering":        
+            break;
+        case "complete":
+            break;
+        default:
+            console.log("State not found");
+            break;
+        }
+    }catch (e){
+        socket.emit('broadcast', {channel: 'log', message: e })
+    }
+  }
+
+  async function handleICEConnectionStateChange(event) {
+    try{
+        let message = "iceConnectionState: "+ peer.iceConnectionState;
+        console.log(message);
+        socket.emit('broadcast', {channel: 'log', message: message });
+        switch (peer.iceConnectionState) {
+        case "new":
+            break;
+        case "completed":
+            break;
+        case "disconnected":
+            break;
+        }
+    }catch (e){
+        socket.emit('broadcast', {channel: 'log', message: e })
+    }    
+  }
+
+
 
 async function showDevices() {    
     let devices = (await navigator.mediaDevices.enumerateDevices()).filter(i=> i.kind == 'videoinput')
-    console.log(devices)
+    socket.emit('broadcast', {channel: 'log', message: devices })
 }
 
 function captureCamera (sdpOffer) {
+    socket.emit('broadcast', {channel: 'log', message: {msg: 'captureCamera()'} })
+
     let constraints = {
         audio: false,
+        /**
+         * case multple cameras you can get device id(`showDevices();`) and set here
+         */
         /*
         video: {            
-            deviceId: { exact: '4e9606ec398f795755efea4f4b75f206f5b5140f5a9ee8ee51e81154c220f97a' }
+            deviceId: { exact: 'cba2853b37d8b806508a3ed345a4f2fee38e655bd97ebd8b56b17e739ce60f4d' }
         }                
         */
        video: true
@@ -49,11 +104,13 @@ function captureCamera (sdpOffer) {
 
             applyContraints(track);
 
-            peer.addTrack(track, stream);            
+            peer.addTrack(track, stream);
+
         });
         return createAnswer(sdpOffer);
     }, function(err) {
-        alert('Could not acquire media: ' + err);
+        socket.emit('broadcast', {channel: 'log', message: {msg: 'Could not acquire media: ' + err} })
+        console.error('Could not acquire media: ' + err);
     });
 }
 
@@ -66,24 +123,29 @@ function forceKbps(sdp, speed){
 }
 
 async function createAnswer (sdp) {
+    socket.emit('broadcast', {channel: 'log', message: {msg: 'createAnswer' } })
     let offer = new RTCSessionDescription({sdp: sdp, type: 'offer'})
     await peer.setRemoteDescription(offer)
     let answer = await peer.createAnswer()
     
     //answer.sdp = forceKbps(answer.sdp, 50)
 
-    await peer.setLocalDescription(answer)
+    await peer.setLocalDescription(answer);
+
+    peer.addEventListener("icegatheringstatechange", iceGatheringStateChangeHandler);
+    peer.oniceconnectionstatechange = handleICEConnectionStateChange;
 
     sendAnswerToBrowser(peer.localDescription.sdp)
 }
 
 function applyContraints (videoTrack) {
+    socket.emit('broadcast', {channel: 'log', message: {msg: 'applyContraints' } })
     if (videoTrack) {
     
         const videoConstraints = {
             width: { min: 320, max: 1280 },
             height: { min: 240,  max: 720 },
-            frameRate: {min: 15,  max: 30 }
+            frameRate: {min: 5,  max: 5 }
         };
     
         // Apply video track constraints

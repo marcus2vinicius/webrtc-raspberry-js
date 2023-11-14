@@ -11,9 +11,14 @@ const localVideoTag = document.getElementById('localVideo')
 socket.on("connect", () => {
     console.log("Connected websocket");
     socket.emit("subscribe", 'webrtc-answer');
+    socket.emit("subscribe", 'log');
 
     socket.on('webrtc-answer', (message) => {
         setAnswer(message.sdp)
+    })
+
+    socket.on('log', (message) => {
+        console.log('Log from Server: ', message)
     })
     btnStart.disabled = false;
 });
@@ -23,13 +28,12 @@ function createPeer () {
     console.log("creating a peer connection")
 
     let config = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-        ]
-    };
+        iceServers: [{
+            urls: ['stun:stun.l.google.com:19302'],
+        }]
+    }
       
-    peer = new RTCPeerConnection();  
+    peer = new RTCPeerConnection(config);  
 
     peer.addEventListener('track', function (evt) {
         if (evt.track.kind == 'video') {
@@ -88,7 +92,7 @@ function applyContraints (videoTrack) {
         const videoConstraints = {
             width: { min: 320, max: 1280 },
             height: { min: 240,  max: 720 },
-            frameRate: {min: 15,  max: 30 }
+            frameRate: {min: 5,  max: 5 }
         };
     
         // Apply video track constraints
