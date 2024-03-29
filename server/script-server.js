@@ -6,8 +6,6 @@ var candidates = [];
 var mediaStream = null;
 var mediaStreamTrack = null;
 
-await captureCamera();
-
 //region websocket
 socket.on("connect", async () => {
     console.log("Connected websocket");
@@ -34,6 +32,12 @@ socket.on("connect", async () => {
     })
 });
 //endregion websocket
+
+//region main
+
+await captureCamera();
+
+//endregion main
 
 async function createPeer (offerSDP) {
     console.log("Create Peer")
@@ -153,12 +157,14 @@ async function captureCamera () {
         /**
          * case multiple cameras you can get deviceId executing `showDevices();' and set here
          */
-        
+
+        /**
         video: {            
-            deviceId: { exact: '275f9a3028e2b10fbcc03dc08da532b84ddead502032f9797eb110f16074e974' }
-        }                
+            deviceId: { exact: '18ca329e2c50b1f21edc29cba8cf6eb8f8c85d9214e32f8d78ffaefea816c4ab' }
+        }
+        */
         
-       //video: true
+       video: true
     }; 
 
     await navigator.mediaDevices.getUserMedia(constraints).then(async function(stream) {
