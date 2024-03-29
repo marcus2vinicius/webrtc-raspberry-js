@@ -2,28 +2,41 @@ import { io } from "https://cdn.socket.io/4.4.1/socket.io.esm.min.js";
 const socket = io("https://vinymd-socketio-pub.onrender.com");
 
 var peer = null;
+var candidates = [];
+var mediaStream = null;
+var mediaStreamTrack = null;
+
+await captureCamera();
 
 //region websocket
-socket.on("connect", () => {
+socket.on("connect", async () => {
     console.log("Connected websocket");
     socket.emit("subscribe", 'webrtc-offer');
     socket.emit("subscribe", 'candidate');
 
-    socket.on('webrtc-offer', (message) => {
+    socket.on('webrtc-offer', async (message) => {
         console.log('receive msg from websocket')
         socket.emit('broadcast', {channel: 'log', message: {msg: 'receive msg from websocket' } })
+        await createPeer(message.sdp);
         showDevices();
-        createPeer(message.sdp)
     })
 
     socket.on('candidate', (message) => {
-        if(peer)
-            peer.addIceCandidate(new RTCIceCandidate(message.candidate)).catch((e) => console.error(e));
+        if(message.from === "client") {
+            if (peer && peer.remoteDescription) {
+                peer.addIceCandidate(new RTCIceCandidate(message.candidate)).catch((e) => console.error(e));
+            } else {
+                candidates.push(new RTCIceCandidate(message.candidate));
+                console.warn(`Added candidate in list: ${candidates.length}`);
+            }
+        }else
+            console.warn("Ignoring myself candidate")
     })
 });
 //endregion websocket
 
-function createPeer (offerSDP) {
+async function createPeer (offerSDP) {
+    console.log("Create Peer")
     socket.emit('broadcast', {channel: 'log', message: {msg: 'createPeer()'} })
 
     let config = {
@@ -34,8 +47,15 @@ function createPeer (offerSDP) {
     
     peer = new RTCPeerConnection(config);
 
+    peer.onicegatheringstatechange = iceGatheringStateChangeHandler;
+    peer.oniceconnectionstatechange = iceConnectionStateChangeHandler;
+    peer.onicecandidate = icecandidateHandler;
+    peer.onicecandidateerror = icecandidateerrorHandler;
+    peer.onconnectionstatechange = connectionstatechangeHandler;
+
     try{
-        captureCamera(offerSDP);
+        peer.addTrack(mediaStreamTrack, mediaStream);
+        await createAnswer(offerSDP);
 
     }catch (e){
         socket.emit('broadcast', {channel: 'log', message: e })
@@ -64,9 +84,9 @@ async function iceGatheringStateChangeHandler() {
     }
 }
 
-async function handleICEConnectionStateChange(event) {
+async function iceConnectionStateChangeHandler(event) {
     try{
-        let message = "iceConnectionState: "+ peer.iceConnectionState;
+        let message = `iceConnectionState:  ${peer.iceConnectionState}`;
         console.log(message);
         socket.emit('broadcast', {channel: 'log', message: message });
         switch (peer.iceConnectionState) {
@@ -82,47 +102,79 @@ async function handleICEConnectionStateChange(event) {
     }    
 }
 
-async function onicecandidateHandler(event) {
+async function icecandidateerrorHandler(event){
+    console.error(event);
+}
+
+async function connectionstatechangeHandler() {
+    // ICEConnection: new -> checking -> connected -> completed -> disconnected -> closed -> failed
+    console.log(`Connection State: ${peer.connectionState}`);
+    switch (peer.connectionState) {
+        case "disconnected":
+            console.warn("Disconnected - wait recover connection")
+            break;
+        case "closed":
+        case "failed":
+            console.warn("Implemente try to reconnect...")
+            break;
+        case "connected":
+            console.log("webRTC Connected!!!")
+            break;
+    }
+}
+
+async function icecandidateHandler(event) {
+    //console.log(`Send candidate ${JSON.stringify(event.candidate)}`);
     if (event.candidate) {
-        socket.emit('broadcast', {channel: 'candidate', message: {candidate: event.candidate} })      
+        await socket.emit('broadcast', {channel: 'candidate',
+            message: {
+                candidate: event.candidate,
+                from: "server"
+            }
+        });
     }
 }
 
 
 
-async function showDevices() {    
+async function showDevices() {
+    //Ask user to allow permission to camera on browser
+    //Execute: await navigator.mediaDevices.getUserMedia({video: true})
+
     let devices = (await navigator.mediaDevices.enumerateDevices()).filter(i=> i.kind == 'videoinput')
     socket.emit('broadcast', {channel: 'log', message: devices })
 }
 
-function captureCamera (sdpOffer) {
+async function captureCamera () {
     socket.emit('broadcast', {channel: 'log', message: {msg: 'captureCamera()'} })
 
     let constraints = {
         audio: false,
         /**
-         * case multple cameras you can get device id(`showDevices();`) and set here
+         * case multiple cameras you can get deviceId executing `showDevices();' and set here
          */
         
         video: {            
-            deviceId: { exact: 'cba2853b37d8b806508a3ed345a4f2fee38e655bd97ebd8b56b17e739ce60f4d' }
+            deviceId: { exact: '275f9a3028e2b10fbcc03dc08da532b84ddead502032f9797eb110f16074e974' }
         }                
         
        //video: true
     }; 
 
-    navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    await navigator.mediaDevices.getUserMedia(constraints).then(async function(stream) {
         stream.getTracks().forEach(function(track) {
 
             applyContraints(track);
 
-            peer.addTrack(track, stream);
+            mediaStreamTrack = track;
+            mediaStream = stream;
 
+            console.log("Video Captured");
         });
-        return createAnswer(sdpOffer);
+
     }, function(err) {
         socket.emit('broadcast', {channel: 'log', message: {msg: 'Could not acquire media: ' + err} })
-        console.error('Could not acquire media: ' + err);
+        console.error(`Could not acquire media: ${err}`);
     });
 }
 
@@ -131,24 +183,32 @@ function captureCamera (sdpOffer) {
  * test content hint, simulating situations when you have bad connections
  */
 function forceKbps(sdp, speed){
+    console.warn(`Forcekbps - ${speed} kbps`)
     return sdp.replace(/a=mid:(.*)\r\n/g, 'a=mid:$1\r\nb=AS:' + speed + '\r\n');
 }
 
 async function createAnswer (sdp) {
+    console.log("Create Answer");
     socket.emit('broadcast', {channel: 'log', message: {msg: 'createAnswer' } })
-    let offer = new RTCSessionDescription({sdp: sdp, type: 'offer'})
-    await peer.setRemoteDescription(offer)
-    let answer = await peer.createAnswer()
+
+    let offer = new RTCSessionDescription({sdp: sdp, type: 'offer'});
+    await peer.setRemoteDescription(offer);
+    console.log("Applied Remote Description");
+
+    let answer = await peer.createAnswer();
+    await sendAnswerToBrowser(answer.sdp);
     
     //answer.sdp = forceKbps(answer.sdp, 50)
 
-    await peer.setLocalDescription(answer);
+    peer.setLocalDescription(answer);//take care about 'await' because can to consider delay on apply candidates
+    console.log("Applied Local Description");
 
-    peer.addEventListener("icegatheringstatechange", iceGatheringStateChangeHandler);
-    peer.oniceconnectionstatechange = handleICEConnectionStateChange;
-    peer.onicecandidate = onicecandidateHandler;
+    candidates.forEach(c=>{
+        console.log('Added candidates on peer');
+        peer.addIceCandidate(c).catch((e)=> console.error(e));
+    });
 
-    sendAnswerToBrowser(peer.localDescription.sdp);
+    candidates = [];
 }
 
 function applyContraints (videoTrack) {
@@ -178,7 +238,7 @@ function applyContraints (videoTrack) {
     }
 }
 
-function sendAnswerToBrowser(answerSDP) {
+async function sendAnswerToBrowser(answerSDP) {
     console.log('sendAnswerToBrowser')
-    socket.emit('broadcast', {channel: 'webrtc-answer', message: {sdp: answerSDP} })
+    await socket.emit('broadcast', {channel: 'webrtc-answer', message: {sdp: answerSDP} })
 }

@@ -2,6 +2,8 @@ import { io } from "https://cdn.socket.io/4.4.1/socket.io.esm.min.js";
 const socket = io("https://vinymd-socketio-pub.onrender.com");
 
 var peer = null;
+var candidates = [];
+var offer = null;
 
 const btnStart = document.getElementById('startCallButton')
 const btnStop = document.getElementById('stopCallButton')
@@ -23,8 +25,15 @@ socket.on("connect", () => {
     })
 
     socket.on('candidate', (message) => {
-        if(peer)
-            peer.addIceCandidate(new RTCIceCandidate(message.candidate)).catch((e) => console.error(e));
+        if(message.from === 'server') {
+            if (peer && peer.remoteDescription) {
+                peer.addIceCandidate(new RTCIceCandidate(message.candidate)).catch((e) => console.error(e));
+            } else {
+                candidates.push(message.candidate);
+                console.warn(`Added candidate in list: ${candidates.length}`);
+            }
+        }else
+            console.warn('Ignoring myself candidate');
     })
 
     btnStart.disabled = false;
@@ -42,11 +51,15 @@ function createPeer () {
       
     peer = new RTCPeerConnection(config);
 
+    peer.onicegatheringstatechange = icegatheringstatechange;
+    peer.onicecandidate = icecandidateHandler;
+    peer.oniceconnectionstatechange = iceConnectionStateChangeHandler;
+    peer.onicecandidateerror = icecandidateerrorHandler;
+    peer.onconnectionstatechange = connectionstatechangeHandler;
+
     peer.addEventListener('track', function (evt) {
         if (evt.track.kind == 'video') {
-            console.log("receiving a video")
-
-            applyContraints( evt.streams[0].getVideoTracks()[0] );
+            console.log("receiving a video");
 
             localVideoTag.srcObject = evt.streams[0];
             localVideoTag.style.display = 'inline'
@@ -64,25 +77,25 @@ function createPeer () {
 async function negociate () {
     console.log("negociate")
 
-    let offer = await peer.createOffer();
+    offer = await peer.createOffer();
 
     //offer.sdp = forceKbps(offer.sdp, 50)
 
-    await peer.setLocalDescription(offer);
-
-    peer.addEventListener("icegatheringstatechange", iceGatheringStateChangeHandler);
-    peer.onicecandidate = onicecandidateHandler;
-
-    sendOfferToServer(peer.localDescription.sdp);
+    await sendOfferToServer(offer.sdp);
 }
 
-async function onicecandidateHandler(event) {
+async function icecandidateHandler(event) {
     if (event.candidate) {
-        socket.emit('broadcast', {channel: 'candidate', message: {candidate: event.candidate} })      
+        //console.log(`Send candidate ${JSON.stringify(event.candidate)}`)
+        await socket.emit('broadcast', {channel: 'candidate',
+            message: {
+            candidate: event.candidate,
+            from: "client"
+        } })
     }
 }
 
-async function iceGatheringStateChangeHandler() {
+async function icegatheringstatechange() {
     try{
         let message = `iceGatheringState": ${peer.iceGatheringState}`;
         console.log(message);
@@ -103,44 +116,69 @@ async function iceGatheringStateChangeHandler() {
     }
 }
 
-function applyContraints (videoTrack) {
-    if (videoTrack) {
-    
-        const videoConstraints = {
-            width: { min: 320, max: 1280 },
-            height: { min: 240,  max: 720 },
-            frameRate: {min: 5,  max: 5 }
-        };
-    
-        // Apply video track constraints
-        videoTrack.applyConstraints(videoConstraints)
-            .then(() => {
-                console.log("Video track constraints applied successfully");
-            })
-            .catch((error) => {
-                console.error("Error applying video track constraints:", error);
-                setTimeout(() => {
-                    applyContraints(videoTrack);
-                }, 5000);//5seg
-            });
-    
-        // Set content hint to 'motion' or 'detail'
-        videoTrack.contentHint = 'motion';
+async function iceConnectionStateChangeHandler(event) {
+    try{
+        let message = `iceConnectionState:  ${peer.iceConnectionState}`;
+        console.log(message);
+        socket.emit('broadcast', {channel: 'log', message: message });
+        switch (peer.iceConnectionState) {
+            case "new":
+                break;
+            case "completed":
+                break;
+            case "disconnected":
+                break;
+        }
+    }catch (e){
+        socket.emit('broadcast', {channel: 'log', message: e })
     }
 }
 
-function sendOfferToServer (offerSDP) {
-    console.log('sendOfferToServer')    
-    socket.emit('broadcast', {channel: 'webrtc-offer', message: {sdp: offerSDP} })
+async function icecandidateerrorHandler(event){
+    console.error(event);
 }
 
-function setAnswer (sdp) {
+async function connectionstatechangeHandler() {
+    // ICEConnection: new -> checking -> connected -> completed -> disconnected -> closed -> failed
+    console.log(`Connection State: ${peer.connectionState}`);
+    switch (peer.connectionState) {
+        case "disconnected":
+            console.warn("Disconnected - wait recover connection")
+            break;
+        case "closed":
+        case "failed":
+            console.warn("Implemente try to reconnect...")
+            break;
+        case "connected":
+            console.log("webRTC Connected!!!")
+            break;
+    }
+}
+
+async function sendOfferToServer (offerSDP) {
+    console.log('sendOfferToServer')    
+    await socket.emit('broadcast', {channel: 'webrtc-offer', message: {sdp: offerSDP} })
+}
+
+async function setAnswer (sdp) {
     console.log('setAnswer')
     let answer = {
         sdp: sdp,
         type: 'answer'
     }
-    peer.setRemoteDescription(answer);
+
+    peer.setLocalDescription(offer);
+    console.log("Applied Local Description");
+
+    await peer.setRemoteDescription(answer);
+    console.log("Applied Remote Description");
+
+    candidates.forEach(c=>{
+        console.log('Added candidates on peer');
+        peer.addIceCandidate(new RTCIceCandidate(c)).catch((e) => console.error(e));
+    });
+    candidates = [];
+
     btnStart.disabled = true;
     btnStop.disabled = false;
 }
@@ -150,14 +188,15 @@ function setAnswer (sdp) {
  * test content hint, simulating situations when you have bad connections
  */
 function forceKbps(sdp, speed){
+    console.warn(`Forcekbps - ${speed} kbps`)
     return sdp.replace(/a=mid:(.*)\r\n/g, 'a=mid:$1\r\nb=AS:' + speed + '\r\n');
 }
 
 //start 
-function start () {
+async function start () {
     console.log('start')
     createPeer();
-    negociate();
+    await negociate();
 }
 
 function stop(){
